@@ -1,5 +1,8 @@
 using PyPlot
+using DataFrames
+using LsqFit
 
+hE = 0.01;
 function EulerMethod(dy,I,D,h,it)
 	"""
 		Implementation of the farward Euler method, for 1D system and ND systems.
@@ -39,10 +42,29 @@ function LotkaVolterraEx()
 	show();
 end
 
-Infetti = [15,55,112,173,240,305,403,531,615,984,1254];
-Morti = [0,1,2,6,8,9,14,17,23,24,38];
-Guariti = [0,0,0,0,0,0,42,46,50,83,149];
-
+Infetti = [15,55,112,173,240,305,403,531,615,984,1254,1520];
+Morti = [0,1,2,6,8,9,14,17,23,24,38,55];
+Guariti = [0,0,0,0,0,0,42,46,50,83,149,160];
+LOBeta = [0.76,0.76,0.566,0.178,0.150,0.142];
+function beta_SQ_fit()
+	ω = log.(LOBeta);
+	x = 1:4:23;
+	#println(length(ω))
+	#println(length(1:4:23))
+	b = (sum(x.*ω)-(1/6)*sum(x)*sum(ω))/(sum(x.*x)-(1/6)*(sum(x)^2));
+	a = (1/6)*sum(ω) - (1/6)*b*sum(x);
+	d = 1:0.1:23;
+	g(x) = exp(a)*exp(b*x);
+	figure()
+	scatter(x,LOBeta)
+	plot(d,g.(d));
+	title("β In Lodi Province")
+	ylabel("β");
+	xlabel("Day From The 21st Of February");
+	legend(["β Forecast", "True β 4 Day Mean"]);
+	return exp(a), b;
+	
+end
 function SIR_Closed_Ex1()
 	"""
 		S'(t) = -βS(t)(I(t) / N)
@@ -59,7 +81,7 @@ function SIR_Closed_Ex1()
 		  β*y[1]*(y[2]/N) - γ*y[2],
 		  γ*y[2]
 		];
-	X,Y = EulerMethod(dy,[S0,I0,R0],[0.0,0.0,0.0],[0.01,0.01,0.01],160*(1/0.01));
+	X,Y = EulerMethod(dy,[S0,I0,R0],[0.0,0.0,0.0],[hE,hE,hE],160*(1/hE));
 	title(L"Closed SIR Model $\beta=0.2$, $\gamma=0.1$");
 	plot(X,Y);
 	legend(["Susceptible","Infected","Recoverd and Immune"]);
@@ -73,100 +95,209 @@ function SIR_Closed(β,γ,d)
 		R'(t) = γ I(t)
 	"""
 	N=10078012.0;
-	I0 = 1.0;
-	R0 = 0.0;
+	I0 = 1;
+	R0 = (Morti.+Guariti)[1];
 	S0 = N-I0-R0;
 	dy(y) = [ -β*y[1]*(y[2]/N),
 		  β*y[1]*(y[2]/N) - γ*y[2],
 		  γ*y[2]
 		];
-	X,Y = EulerMethod(dy,[S0,I0,R0],[0.0,0.0,0.0],[0.01,0.01,0.01],d*(1/0.01));
-	#title(L"Closed SIR Model $\beta=0.2$, $\gamma=0.1$");
+	X,Y = EulerMethod(dy,[S0,I0,R0],[0.0,0.0,0.0],[hE,hE,hE],d*(1/hE));
 	#plot(X,Y);
-	#semilogygend(["Susceptible","Infected","Recoverd and Immune"]);
+	#legend(["Susceptible","Infected","Recoverd and Immune"]);
 	return X,Y;
+end
+function SIR_Qu(β,γ,d,A,b,p)
+	"""
+		S'(t) = -βS(t)(I(t) / N)
+		I'(t) = βS(t) ( I(t) / N ) - γ I(t)
+		R'(t) = γ I(t)
+	"""
+	N=10078012.0;
+	I0 = 1.0;
+	R0 = 0.0;
+	S0 = N-I0-R0;
+	dy(y) = [ -(p*y[4]+(1.0-p))*β*y[1]*(y[2]/N),
+		(p*y[4]+(1.0-p))*β*y[1]*(y[2]/N) - γ*y[2],
+		  γ*y[2],
+		  b*y[4]
+		];
+	X,Y = EulerMethod(dy,[S0,I0,R0,A],[0.0,0.0,0.0,0.0],[hE,hE,hE,hE],d*(1/hE));
+	#plot(X,Y);
+	#legend(["Susceptible","Infected","Recoverd and Immune"]);
+	return X,Y;
+end
+function SIR_Test(β,γ)
+	X,Y = SIR_Closed(β,γ,12);
+	return LSE(Y,Infetti,Morti.+Guariti);
+end
+function SIR_Test_LSQ(β,γ)
+	X,Y = SIR_Closed(β,γ,12);
+	R = [];
+	for i in 1:12
+		push!(R,Y[floor(Int,(1/hE)*i)][2]);
+	end
+	return R;
 end
 function LSE(Y,D1,D2)
 	S = 0
-	for i in 1:length(D1)
-		S = S + ((10^-5)*(Y[i][2]-D1[i]))^2+((10^-5)*(Y[i][3]-D2[i]))^2;
+	for i in 2:length(D1)
+		#println("Infetti: ", Y[floor(Int,(1/hE)*i)][2],"\tInfetti Reali: ", D1[i], "\tRimossi: ", Y[floor(Int,(1/hE)*i)][3], "\tRimossi Reali:", D2[i]);
+		S = S +(1/D1[i])*abs((Y[floor(Int,(1/hE)*i)][2]-D1[i]))+(1/D2[i])*abs((Y[floor(Int,(1/hE)*i)][3]-D2[i]));
 		#println(S);
 	end
 	return S;
 
 end
-function GradientDescent(itmax,subit,h)
-	β = 0.8; γ = 0.10; w=10;
-	E = [1000000000.0];
-	L = 1000000000.0;
-	for it in 1:itmax
-		for i in 1:subit
-			X,Y = SIR_Closed(β,γ,11);
-			L = LSE(Y,Infetti,Morti.+Guariti);
-			#println("iit: ", i, "L: ", L);
-			X,Y = SIR_Closed(β-h,γ,11);
-			L1 = LSE(Y,Infetti,Morti.+Guariti);
-			X,Y = SIR_Closed(β+h,γ,11);
-			L2 = LSE(Y,Infetti,Morti.+Guariti);
-			∂β = (L2-L1)/(2*h);  
-			X,Y = SIR_Closed(β,γ-h,11);
-			L1 = LSE(Y,Infetti,Morti.+Guariti);
-			X,Y = SIR_Closed(β,γ+h,11);
-			L2 = LSE(Y,Infetti,Morti.+Guariti);
-			∂γ = (L2-L1)/(2*h);
-			β = β-w*∂β;
-			γ = γ-w*∂γ;
-			if E[end] < L
-				w = 0.5*w;
-			else
-				break
-			end
-		end
-		println("Iteration: ",it," step:", h," Energy:", L);
+function GD(β0,γ0,itmax,h)
+	β=β0;
+	w =10^(-5);
+	E =  [];
+	for it in 1:itmax			
+		X,Y = SIR_Closed(β,γ0,12);
+		L = LSE(Y,Infetti,Morti.+Guariti);
+		println("Iteration  ",it,",\tEnergy: ", L,"\tBeta: ",β);
 		E = push!(E,L);
+		X,Y = SIR_Closed(β+h,γ0,12);
+		L2 = LSE(Y,Infetti,Morti.+Guariti);
+		X,Y = SIR_Closed(β-h,γ0,12);
+		L1 = LSE(Y,Infetti,Morti.+Guariti);
+		∂β = (L2-L1)/(2*h);
+		β = β-w*∂β;
+		X,Y = SIR_Closed(β,γ0,12);
+		L = LSE(Y,Infetti,Morti.+Guariti);
+		if E[end] <= L
+			println("E: ", E[end]," L: ",L," flag: ", E[end]<=L);
+			break;
+		end
 
 	end
-	plot(E);
-	return β,γ;
-	
+	return β;
 end
-function SIR_Closed_Fitted()
+function GD2(β0,γ0,itmax,h)
+	β=β0;
+	γ=γ0;
+	wβ =10^(-4);
+	wγ = 10^(-4);
+	E =  0;
+	for it in 1:itmax			
+		X,Y = SIR_Closed(β,γ,12);
+		L = LSE(Y,Infetti,Morti.+Guariti);
+		#println("Iteration  ",it,",\tEnergy: ", L,"\tBeta: ",β,"\t Gamma:",γ);
+		E = L;
+		X,Y = SIR_Closed(β+h,γ0,12);
+		L2 = LSE(Y,Infetti,Morti.+Guariti);
+		X,Y = SIR_Closed(β-h,γ0,12);
+		L1 = LSE(Y,Infetti,Morti.+Guariti);
+		∂β = (L2-L1)/(2*h);
+		X,Y = SIR_Closed(β,γ+h,12);
+		L2 = LSE(Y,Infetti,Morti.+Guariti);
+		X,Y = SIR_Closed(β,γ-h,12);
+		L1 = LSE(Y,Infetti,Morti.+Guariti);
+		∂γ = (L2-L1)/(2*h);
+		
+		β = β-wβ*∂β;
+		γ = γ-wγ*∂γ;
+		X,Y = SIR_Closed(β,γ,12);
+		L = LSE(Y,Infetti,Morti.+Guariti);
+		if E <= L
+			println("E: ", E," L: ",L," flag: ", E[end]<=L);
+			break;
+		end
 
-	β,γ = GradientDescent(1000,100,0.001);
+	end
+	return β,γ;
+end
+function SIR_Closed_Fitted(β,γ)
+	
+	figure()
+
 	println("β=",β," γ=",γ);
-	figure()
-	X,Y = SIR_Closed(0.8,1.0/10,11);
-	title("Closed SIR Model");
+	X,Y = SIR_Closed(β,γ,12);
+	title(string("SIR Model 12 days β=",round(β,digits=3),", γ=",round(γ,digits=3)));
 	plot([x[2] for x in X],[y[2] for y in Y]);
 	plot([x[3] for x in X],[y[3] for y in Y]);
-	scatter(1:11,Infetti)
-	scatter(1:11,Morti.+Guariti)
+	scatter(1:12,Infetti)
+	scatter(1:12,Morti.+Guariti)
 	println("Least square error: ",LSE(Y,Infetti, Morti.+Guariti));
 	legend(["Infected","Removed","True Infected","True Removed"]);
 
 	figure()
-	X,Y = SIR_Closed(β,γ,11);
-	title("Closed SIR Model");
-	plot([x[2] for x in X],[y[2] for y in Y]);
-	plot([x[3] for x in X],[y[3] for y in Y]);
-	scatter(1:11,Infetti)
-	scatter(1:11,Morti.+Guariti)
-	println("Least square error: ",LSE(Y,Infetti, Morti.+Guariti));
-	legend(["Infected","Removed","True Infected","True Removed"]);
-
-	figure()
-	X,Y = SIR_Closed(β,γ,360);
-	title("Closed SIR Model");
+	X,Y = SIR_Closed(β,γ,180);
+	title(string("SIR Model 180 days β=",round(β,digits=3),", γ=",round(γ,digits=3)));
 	plot([x[1] for x in X],[y[1] for y in Y]);
 	plot([x[2] for x in X],[y[2] for y in Y]);
 	plot([x[3] for x in X],[y[3] for y in Y]);
-	scatter(1:11,Infetti)
-	scatter(1:11,Morti.+Guariti)
 	println("Least square error: ",LSE(Y,Infetti, Morti.+Guariti));
-	legend(["Susceptible","Infected","Removed","True Infected","True Removed"]);
+	legend(["Susceptible","Infected","Removed"]);
+
+	println("R0: ", β/γ);
 	show();
 end
+
+function GenerateTable()
+	df = DataFrame(β = Float64[], γ = Float64[], E = Float64[],R0 = Float64[]);
+	for β0 in 0.1:0.1:2
+		println("Iteration Start, for β=",β0);
+		for γ0 in 1/23:0.01:1
+			β,γ=GD2(β0,γ0,10000,0.01);
+			#β = GD(1.94,1/1.64,10000,0.01);
+			L = SIR_Test(β,γ);
+			push!(df,(β,γ,L,β/γ));
+		end
+		println("Iteration Done, for β=",β0);
+	end
+	return df;
+end
+
 #Euler1DEx();
 #LotkaVolterraEx();
 #SIR_Closed();
-SIR_Closed_Fitted();
+#SIR_Closed_Fitted(0.8,1/14);
+
+function SIR_CG_Ex()
+	
+	figure()
+	X,Y = SIR_Closed(0.76,1/6.8,12);
+	title(string("SIR Model 12 days β=",0.76,", γ=",round(1/6.8,digits=3)))
+	plot([x[2] for x in X],[y[2] for y in Y]);
+	plot([x[3] for x in X],[y[3] for y in Y]);
+	scatter(1:12,Infetti)
+	scatter(1:12,Morti.+Guariti)
+	println("Least square error: ",LSE(Y,Infetti, Morti.+Guariti));
+	legend(["Infected","Removed","True Infected","True Removed"]);
+	ylabel("Number Of People");
+	xlabel("Day From The 21st Of February");
+
+	figure()
+	X,Y = SIR_Closed(0.76,1/6.8,120);
+	title(string("SIR Model 120 days β=",0.76,", γ=",round(1/6.8,digits=3)))
+	plot([x[1] for x in X],[y[1] for y in Y]);
+	plot([x[2] for x in X],[y[2] for y in Y]);
+	plot([x[3] for x in X],[y[3] for y in Y]);
+	println("Least square error: ",LSE(Y,Infetti, Morti.+Guariti));
+	legend(["Susceptible","Infected","Removed","True Infected","True Removed"]);
+	ylabel("Number Of People");
+	xlabel("Day From The 21st Of February");
+		
+
+
+	show()
+end
+function SIR_Qu_Ex(P)
+	A,b = beta_SQ_fit();
+	println([A,b]);
+	
+
+	figure()
+	for p=0.1:0.1:P
+		X,Y = SIR_Qu(0.76,1/6.8,240,A,b,p);
+		plot([x[2] for x in X],[y[2] for y in Y]);
+	end
+	title(string("SIR Model 240 days β=",0.76,", γ=",round(1/6.8,digits=3)))
+	legend([string("Infected p=",p) for p in 0.1:0.1:P]);
+	ylabel("Number Of People");
+	xlabel("Day From The 21st Of February");
+	
+	show()
+end
