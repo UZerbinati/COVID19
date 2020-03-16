@@ -1,5 +1,3 @@
 # COVID19
 
-
-| File Name | Beta | Gamma |
-
+Some simulation on the COVID19.
